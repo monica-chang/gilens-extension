@@ -1,0 +1,365 @@
+---
+title: "Gov 94OA Analysis"
+author: "Monica Chang"
+date: "5/6/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(rstanarm)
+library(stargazer)
+library(haven)
+library(modEvA)
+library(dplyr)
+library(statxp)
+library(gt)
+library(cowplot)
+library(kableExtra)
+library(splitstackshape)
+```
+
+## imputing percentages
+
+```{r impute v1, warning = FALSE}
+clean_gilens <- read_csv(file = "clean_data/clean_gilens.csv")
+
+clean_gilens_2 <- clean_gilens %>%
+  dplyr::select(id8102, year, switcher, outcome, inc1_fav:inc12_dk) %>%
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  rowwise() %>% 
+  
+  # I add columns to specify the number of respondents in each income group
+  # and the number of total survey respondents for each question.
+  
+  mutate(inc1 = sum(inc1_fav, inc1_opp, inc1_dk, na.rm = TRUE),
+         inc2 = sum(inc2_fav, inc2_opp, inc2_dk, na.rm = TRUE),
+         inc3 = sum(inc3_fav, inc3_opp, inc3_dk, na.rm = TRUE),
+         inc4 = sum(inc4_fav, inc4_opp, inc4_dk, na.rm = TRUE),
+         inc5 = sum(inc5_fav, inc5_opp, inc5_dk, na.rm = TRUE),
+         inc6 = sum(inc6_fav, inc6_opp, inc6_dk, na.rm = TRUE),
+         inc7 = sum(inc7_fav, inc7_opp, inc7_dk, na.rm = TRUE),
+         inc8 = sum(inc8_fav, inc8_opp, inc8_dk, na.rm = TRUE),
+         inc9 = sum(inc9_fav, inc9_opp, inc9_dk, na.rm = TRUE),
+         inc10 = sum(inc10_fav, inc10_opp, inc10_dk, na.rm = TRUE),
+         inc11 = sum(inc11_fav, inc11_opp, inc11_dk, na.rm = TRUE),
+         inc12 = sum(inc12_fav, inc12_opp, inc12_dk, na.rm = TRUE),
+         total = sum(inc1_fav, inc2_fav, inc3_fav, inc4_fav, inc5_fav, inc6_fav,
+                     inc7_fav, inc8_fav, inc9_fav, inc10_fav, inc11_fav, inc12_fav,
+                     inc1_opp, inc2_opp, inc3_opp, inc4_opp, inc5_opp, inc6_opp,
+                     inc7_opp, inc8_opp, inc9_opp, inc10_opp, inc11_opp, inc12_opp,
+                     inc1_dk, inc2_dk, inc3_dk, inc4_dk, inc5_dk, inc6_dk,
+                     inc7_dk, inc8_dk, inc9_dk, inc10_dk, inc11_dk, inc12_dk, 
+                     na.rm = TRUE)) %>%
+  #ASK: Should I include dk? How do I handle in logistic regression? Should I use multinomial or ordinal instead?
+  # I add columns to contain the income percentile scores for each income 
+  # group.
+  
+  mutate(inc1_score = (inc1/total)/2,
+         inc2_score = inc1_score + (inc1/total)/2 + (inc2/total)/2,
+         inc3_score = inc2_score + (inc2/total)/2 + (inc3/total)/2,
+         inc4_score = inc3_score + (inc3/total)/2 + (inc4/total)/2,
+         inc5_score = inc4_score + (inc4/total)/2 + (inc5/total)/2,
+         inc6_score = inc5_score + (inc5/total)/2 + (inc6/total)/2,
+         inc7_score = inc6_score + (inc6/total)/2 + (inc7/total)/2,
+         inc8_score = inc7_score + (inc7/total)/2 + (inc8/total)/2,
+         inc9_score = inc8_score + (inc8/total)/2 + (inc9/total)/2,
+         inc10_score = inc9_score + (inc9/total)/2 + (inc10/total)/2,
+         inc11_score = inc10_score + (inc10/total)/2 + (inc11/total)/2,
+         inc12_score = inc11_score + (inc11/total)/2 + (inc12/total)/2)
+
+
+impute_preferences <- function(df){
+  
+  df <- df %>%
+    
+    # I initialize columns to save the coefficients of the logistic regression
+    # and the imputed percentages of 50th percentile and 90th percentile 
+    # voters in favor of policy change.
+    
+    mutate(coef_intercept = 0) %>%
+    mutate(coef_income = 0) %>%
+    mutate(coef_income_squared = 0) %>%
+    mutate(pred50_sw = 0) %>%
+    mutate(pred90_sw = 0)
+  
+  # I loop through each row (survey question) of the dataframe.
+  
+  for(i in 1:nrow(df)){
+  
+    # For each row, I create a tibble with preference, income, and income^2 columns.
+    # I am re-constituting the individual level data for each survey question.
+    
+    question_data <- tibble(preference = numeric(), income = numeric(), income_sq = numeric())
+     
+      # For each income/preference category (e.g. inc1_fav), I do the following:
+    
+      for(j in 5:40){
+       
+         # I initialize an empty tibble to contain information for the survey 
+         # respondents in this income preference category.
+         
+         inc_group_data <- tibble(preference = numeric(), 
+                                  income = numeric(), 
+                                  income_sq = numeric())
+         
+         # I store the number of individuals in that income/preference category.
+        
+         x <- ifelse(!is.na(df[i,][j][[1]]), df[i,][j][[1]], 0)
+         
+         # I store the appropriate income score for the income/preference category.
+         
+         score <- ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc1", df[i,]$inc1_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc2", df[i,]$inc2_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc3", df[i,]$inc3_score,
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc4", df[i,]$inc4_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc5", df[i,]$inc5_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc6", df[i,]$inc6_score,
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc7", df[i,]$inc7_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc8", df[i,]$inc8_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc9", df[i,]$inc9_score,
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc10", df[i,]$inc10_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc11", df[i,]$inc11_score, 
+                          df[i,]$inc12_score)))))))))))
+                          
+         # I store the appropriate preference number for the income/preference 
+         # category. 1 indicates "favor," 0 indicates "oppose," and NA indicates
+         # "don't know."
+         
+         pref <- ifelse(substr(colnames(df[i,][j]), 6, 8) == "fav", 1, 
+                               ifelse(substr(colnames(df[i,][j]), 6, 8) == "opp",
+                                       0, NA))
+        
+         # I add x number of rows to tibble y to reflect the x individuals in
+         # this income/preference category for this survey question.
+         
+         inc_group_data <- inc_group_data %>% 
+           add_row(preference = pref, income = score, income_sq = score*score)
+             
+         inc_group_data <- expandRows(inc_group_data, count=x, count.is.col=FALSE)
+        
+         question_data <- rbind(question_data, inc_group_data)
+         
+     } 
+    
+     # After adding rows for each individual that took the survey to the 
+     # tibble, we can run a logistic regression.
+      
+     model <- glm(preference ~ income + income_sq, 
+                  family = binomial(link = "logit"),
+                  data = question_data)
+      
+    # I save the regression coefficients to the row for easy use in 
+    # imputing the percent favor of other percentiles.
+    
+    df[i,]$coef_intercept <- coef(model)[[1]]
+    df[i,]$coef_income <- coef(model)[[2]]
+    df[i,]$coef_income_squared <- coef(model)[[3]]
+    
+    # I calculate the imputed percentage of median voters and 90th percentile
+    # voters that would favor a proposed policy change.
+    
+    df[i,]$pred50_sw <- invlogit(coef(model)[[1]] + coef(model)[[2]]*0.5 + coef(model)[[3]]*0.5*0.5)
+    df[i,]$pred90_sw <- invlogit(coef(model)[[1]] + coef(model)[[2]]*0.9 + coef(model)[[3]]*0.9*0.9)
+    
+    # If the survey response of “favor” reflects a preference for the status 
+    # quo, I invert the favor and oppose measures.
+    
+    if(df[i,]$switcher == 1){
+      df[i,]$pred50_sw <- 1 - df[i,]$pred50_sw
+      df[i,]$pred90_sw <- 1 - df[i,]$pred90_sw
+    }
+  }
+  
+  return(df)
+}
+
+clean_gilens_3 <- impute_preferences(clean_gilens_2)
+
+```
+
+```{r impute v2, warning = FALSE}
+clean_gilens <- read_csv(file = "clean_data/clean_gilens.csv")
+
+clean_gilens_4 <- clean_gilens %>%
+  dplyr::select(id8102, year, switcher, outcome, inc1_fav:inc12_opp) %>%
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  rowwise() %>% 
+  
+  # I add columns to specify the number of respondents in each income group
+  # and the number of total survey respondents for each question.
+  
+  mutate(inc1 = sum(inc1_fav, inc1_opp, na.rm = TRUE),
+         inc2 = sum(inc2_fav, inc2_opp, na.rm = TRUE),
+         inc3 = sum(inc3_fav, inc3_opp, na.rm = TRUE),
+         inc4 = sum(inc4_fav, inc4_opp, na.rm = TRUE),
+         inc5 = sum(inc5_fav, inc5_opp, na.rm = TRUE),
+         inc6 = sum(inc6_fav, inc6_opp, na.rm = TRUE),
+         inc7 = sum(inc7_fav, inc7_opp, na.rm = TRUE),
+         inc8 = sum(inc8_fav, inc8_opp, na.rm = TRUE),
+         inc9 = sum(inc9_fav, inc9_opp, na.rm = TRUE),
+         inc10 = sum(inc10_fav, inc10_opp, na.rm = TRUE),
+         inc11 = sum(inc11_fav, inc11_opp, na.rm = TRUE),
+         inc12 = sum(inc12_fav, inc12_opp, na.rm = TRUE),
+         total = sum(inc1_fav, inc2_fav, inc3_fav, inc4_fav, inc5_fav, inc6_fav,
+                     inc7_fav, inc8_fav, inc9_fav, inc10_fav, inc11_fav, inc12_fav,
+                     inc1_opp, inc2_opp, inc3_opp, inc4_opp, inc5_opp, inc6_opp,
+                     inc7_opp, inc8_opp, inc9_opp, inc10_opp, inc11_opp, inc12_opp,
+                     na.rm = TRUE)) %>%
+  
+  # I add columns to contain the income percentile scores for each income 
+  # group.
+  
+  mutate(inc1_score = (inc1/total)/2,
+         inc2_score = inc1_score + (inc1/total)/2 + (inc2/total)/2,
+         inc3_score = inc2_score + (inc2/total)/2 + (inc3/total)/2,
+         inc4_score = inc3_score + (inc3/total)/2 + (inc4/total)/2,
+         inc5_score = inc4_score + (inc4/total)/2 + (inc5/total)/2,
+         inc6_score = inc5_score + (inc5/total)/2 + (inc6/total)/2,
+         inc7_score = inc6_score + (inc6/total)/2 + (inc7/total)/2,
+         inc8_score = inc7_score + (inc7/total)/2 + (inc8/total)/2,
+         inc9_score = inc8_score + (inc8/total)/2 + (inc9/total)/2,
+         inc10_score = inc9_score + (inc9/total)/2 + (inc10/total)/2,
+         inc11_score = inc10_score + (inc10/total)/2 + (inc11/total)/2,
+         inc12_score = inc11_score + (inc11/total)/2 + (inc12/total)/2)
+
+
+impute_preferences_2 <- function(df){
+  
+  df <- df %>%
+    
+    # I initialize columns to save the coefficients of the logistic regression
+    # and the imputed percentages of 50th percentile and 90th percentile 
+    # voters in favor of policy change.
+    
+    mutate(coef_intercept = 0) %>%
+    mutate(coef_income = 0) %>%
+    mutate(coef_income_squared = 0) %>%
+    mutate(pred50_sw = 0) %>%
+    mutate(pred90_sw = 0)
+  
+  # I loop through each row (survey question) of the dataframe.
+  
+  for(i in 1:nrow(df)){
+  
+    # For each row, I create a tibble with preference, income, and income^2 columns.
+    # I am re-constituting the individual level data for each survey question.
+    
+    question_data <- tibble(preference = numeric(), income = numeric(), income_sq = numeric())
+     
+      # For each income/preference category (e.g. inc1_fav), I do the following:
+    
+      for(j in 5:28){
+       
+         # I initialize an empty tibble to contain information for the survey 
+         # respondents in this income preference category.
+         
+         inc_group_data <- tibble(preference = numeric(), 
+                                  income = numeric(), 
+                                  income_sq = numeric())
+         
+         # I store the number of individuals in that income/preference category.
+        
+         x <- ifelse(!is.na(df[i,][j][[1]]), df[i,][j][[1]], 0)
+         
+         # I store the appropriate income score for the income/preference category.
+         
+         score <- ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc1", df[i,]$inc1_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc2", df[i,]$inc2_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc3", df[i,]$inc3_score,
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc4", df[i,]$inc4_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc5", df[i,]$inc5_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc6", df[i,]$inc6_score,
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc7", df[i,]$inc7_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc8", df[i,]$inc8_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc9", df[i,]$inc9_score,
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc10", df[i,]$inc10_score, 
+                  ifelse(substr(colnames(df[i,][j]), 1, 4) == "inc11", df[i,]$inc11_score, 
+                          df[i,]$inc12_score)))))))))))
+                          
+         # I store the appropriate preference number for the income/preference 
+         # category. 1 indicates "favor," 0 indicates "oppose."  
+         
+         pref <- ifelse(substr(colnames(df[i,][j]), 6, 8) == "fav", 1, 0)
+        
+         # I add x number of rows to tibble y to reflect the x individuals in
+         # this income/preference category for this survey question.
+         
+         inc_group_data <- inc_group_data %>% 
+           add_row(preference = pref, income = score, income_sq = score*score)
+             
+         inc_group_data <- expandRows(inc_group_data, count=x, count.is.col=FALSE)
+        
+         question_data <- rbind(question_data, inc_group_data)
+         
+     } 
+    
+     # After adding rows for each individual that took the survey to the 
+     # tibble, we can run a logistic regression.
+      
+     model <- glm(preference ~ income + income_sq, 
+                  family = binomial(link = "logit"),
+                  data = question_data)
+      
+    # I save the regression coefficients to the row for easy use in 
+    # imputing the percent favor of other percentiles.
+    
+    df[i,]$coef_intercept <- coef(model)[[1]]
+    df[i,]$coef_income <- coef(model)[[2]]
+    df[i,]$coef_income_squared <- coef(model)[[3]]
+    
+    # I calculate the imputed percentage of median voters and 90th percentile
+    # voters that would favor a proposed policy change.
+    
+    df[i,]$pred50_sw <- invlogit(coef(model)[[1]] + coef(model)[[2]]*0.5 + coef(model)[[3]]*0.5*0.5)
+    df[i,]$pred90_sw <- invlogit(coef(model)[[1]] + coef(model)[[2]]*0.9 + coef(model)[[3]]*0.9*0.9)
+    
+    # If the survey response of “favor” reflects a preference for the status 
+    # quo, I invert the favor and oppose measures.
+    
+    if(df[i,]$switcher == 1){
+      df[i,]$pred50_sw <- 1 - df[i,]$pred50_sw
+      df[i,]$pred90_sw <- 1 - df[i,]$pred90_sw
+    }
+  }
+  
+  return(df)
+}
+
+clean_gilens_5 <- impute_preferences_2(clean_gilens_4)
+
+# Compare how close my imputation is to Gilens' imputation
+
+a <- clean_gilens %>% 
+  dplyr::select(id8102, pred50_sw, pred90_sw)
+b <- clean_gilens_5 %>% 
+  dplyr::select(id8102, pred50_sw, pred90_sw) %>%
+  rename(id8102_2 = id8102, pred50_sw_2 = pred50_sw, pred90_sw_2 = pred90_sw)
+c <- cbind(a, b) %>% 
+  mutate(diff_50 = pred50_sw_2 - pred50_sw, diff_90 = pred90_sw_2 - pred90_sw)
+
+```
+
+for each row
+    create a tibble Y with income and preference columns
+    for each income/preference category w X individuals
+      create X rows in tibble Y
+      if it's fav, preference = 1, else preference = 0
+      income = corresponding income score
+    run logistic regression preference ~ income + income^2 on tibble
+    add coefficients to original row
+    calculate pred50_sw using coefficients and add to row
+    calculate pred90_sw using coefficients and add to row
+    if switcher == 1, flip the pred50_sw and pred90_sw values
+    
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
