@@ -19,15 +19,16 @@ library(gt)
 library(cowplot)
 library(kableExtra)
 library(splitstackshape)
+library(readxl)
 ```
 
 ## imputing percentages with Gilens' data
 
-```{r impute v1, warning = FALSE}
+```{r impute gilens data, warning = FALSE}
 clean_gilens <- read_csv(file = "clean_data/clean_gilens.csv")
 
 clean_gilens_2 <- clean_gilens %>%
-  dplyr::select(id8102, year, switcher, outcome, inc1_fav:inc12_dk) %>%
+  dplyr::select(id8102, year, outcome, switcher, xl_area, inc1_fav:inc12_dk) %>%
   mutate_all(~replace(., is.na(.), 0)) %>%
   rowwise() %>% 
   
@@ -53,7 +54,7 @@ clean_gilens_2 <- clean_gilens %>%
                      inc1_dk, inc2_dk, inc3_dk, inc4_dk, inc5_dk, inc6_dk,
                      inc7_dk, inc8_dk, inc9_dk, inc10_dk, inc11_dk, inc12_dk, 
                      na.rm = TRUE)) %>%
-  #ASK: Should I include dk? How do I handle in logistic regression? Should I use multinomial or ordinal instead?
+
   # I add columns to contain the income percentile scores for each income 
   # group.
   
@@ -96,7 +97,7 @@ impute_preferences <- function(df){
      
       # For each income/preference category (e.g. inc1_fav), I do the following:
     
-      for(j in 5:40){
+      for(j in 6:41){
        
          # I initialize an empty tibble to contain information for the survey 
          # respondents in this income preference category.
@@ -178,6 +179,8 @@ impute_preferences <- function(df){
 
 clean_gilens_3 <- impute_preferences(clean_gilens_2)
 
+write_csv(clean_gilens_3, file = "clean_data/clean_gilens_imputed")
+
 # Compare how close my imputation is to Gilens' imputation.
 
 a <- clean_gilens %>% 
@@ -191,31 +194,59 @@ c <- cbind(a, b) %>%
     
 ## Imputing percentages with my own data
 
-year
-outcome = passed in 2 years
-switcher 1 = favor refers to status quo, 0 = favor refers to change
-xl_area: 
-"budget"
-"taxation"
-"foreign pol"
-"welf reform"
-"health"
-"soc welfare"
-"defense"
-"misc others"          
-"environment"  
-"govt reform"  
-"econ & labor" 
-"camp finance" 
-"race"         
-"education"    
-"religious"    
-"guns"        
-"civil rts"    
-"terrorism"    
-"immigration" 
-inc1_fav - inc12_dk
-question_text
+```{r impute my data, warning = FALSE}
+
+new_data <- read_excel(path = "clean_data/new_data.xlsx") %>%
+  clean_names() %>%
+  mutate(id = 1:152) 
+
+new_data_2 <- new_data %>% 
+  dplyr::select(id, year, outcome, switcher, xl_area, inc1_fav:inc12_dk) %>%
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  rowwise() %>% 
+  
+  # I add columns to specify the number of respondents in each income group
+  # and the number of total survey respondents for each question.
+  
+  mutate(inc1 = sum(inc1_fav, inc1_opp, inc1_dk, na.rm = TRUE),
+         inc2 = sum(inc2_fav, inc2_opp, inc2_dk, na.rm = TRUE),
+         inc3 = sum(inc3_fav, inc3_opp, inc3_dk, na.rm = TRUE),
+         inc4 = sum(inc4_fav, inc4_opp, inc4_dk, na.rm = TRUE),
+         inc5 = sum(inc5_fav, inc5_opp, inc5_dk, na.rm = TRUE),
+         inc6 = sum(inc6_fav, inc6_opp, inc6_dk, na.rm = TRUE),
+         inc7 = sum(inc7_fav, inc7_opp, inc7_dk, na.rm = TRUE),
+         inc8 = sum(inc8_fav, inc8_opp, inc8_dk, na.rm = TRUE),
+         inc9 = sum(inc9_fav, inc9_opp, inc9_dk, na.rm = TRUE),
+         inc10 = sum(inc10_fav, inc10_opp, inc10_dk, na.rm = TRUE),
+         inc11 = sum(inc11_fav, inc11_opp, inc11_dk, na.rm = TRUE),
+         inc12 = sum(inc12_fav, inc12_opp, inc12_dk, na.rm = TRUE),
+         total = sum(inc1_fav, inc2_fav, inc3_fav, inc4_fav, inc5_fav, inc6_fav,
+                     inc7_fav, inc8_fav, inc9_fav, inc10_fav, inc11_fav, inc12_fav,
+                     inc1_opp, inc2_opp, inc3_opp, inc4_opp, inc5_opp, inc6_opp,
+                     inc7_opp, inc8_opp, inc9_opp, inc10_opp, inc11_opp, inc12_opp,
+                     inc1_dk, inc2_dk, inc3_dk, inc4_dk, inc5_dk, inc6_dk,
+                     inc7_dk, inc8_dk, inc9_dk, inc10_dk, inc11_dk, inc12_dk, 
+                     na.rm = TRUE)) %>%
+
+  # I add columns to contain the income percentile scores for each income 
+  # group.
+  
+  mutate(inc1_score = (inc1/total)/2,
+         inc2_score = inc1_score + (inc1/total)/2 + (inc2/total)/2,
+         inc3_score = inc2_score + (inc2/total)/2 + (inc3/total)/2,
+         inc4_score = inc3_score + (inc3/total)/2 + (inc4/total)/2,
+         inc5_score = inc4_score + (inc4/total)/2 + (inc5/total)/2,
+         inc6_score = inc5_score + (inc5/total)/2 + (inc6/total)/2,
+         inc7_score = inc6_score + (inc6/total)/2 + (inc7/total)/2,
+         inc8_score = inc7_score + (inc7/total)/2 + (inc8/total)/2,
+         inc9_score = inc8_score + (inc8/total)/2 + (inc9/total)/2,
+         inc10_score = inc9_score + (inc9/total)/2 + (inc10/total)/2,
+         inc11_score = inc10_score + (inc10/total)/2 + (inc11/total)/2,
+         inc12_score = inc11_score + (inc11/total)/2 + (inc12/total)/2)
+
+new_data_3 <- impute_preferences(new_data)
+write_csv(new_data_3, file = "clean_data/new_data_imputed")
+```
 
 ## Running analyses
 
