@@ -194,8 +194,7 @@ c <- cbind(a, b) %>%
     
 ## Imputing percentages with my own data
 
-```{r impute my data, warning = FALSE}
-
+```{r add income percentile scores to my data, warning = FALSE}
 new_data <- read_excel(path = "clean_data/new_data.xlsx") %>%
   clean_names() %>%
   mutate(id = 1:152) 
@@ -243,9 +242,103 @@ new_data_2 <- new_data %>%
          inc10_score = inc9_score + (inc9/total)/2 + (inc10/total)/2,
          inc11_score = inc10_score + (inc10/total)/2 + (inc11/total)/2,
          inc12_score = inc11_score + (inc11/total)/2 + (inc12/total)/2)
+```
 
-new_data_3 <- impute_preferences(new_data)
-write_csv(new_data_3, file = "clean_data/new_data_imputed")
+```{r calculating gridlock and seat advantage, warning = FALSE}
+a <- new_data %>%
+  group_by(year) %>%
+  summarize(proposed_changes = n())
+
+b <- new_data %>%
+  filter(outcome == 1) %>%
+  group_by(year) %>%
+  summarize(adopted_changes = n())
+
+c <- inner_join(a, b) %>%
+  mutate(gridlock = adopted_changes/proposed_changes)
+
+d <- c %>% select(year, gridlock)
+
+ggplot(c, aes(x = year, y = gridlock)) +
+  geom_rect(aes(xmin = 2009.512, xmax = 2009.6, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  geom_rect(aes(xmin = 2009.731, xmax = 2009.772, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  geom_rect(aes(xmin = 2010.013, xmax = 2010.093, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  geom_line() +
+  labs(title = "Change in gridlock over time during Obama's first term",
+       subtitle = "Red areas indicate the time periods in which the Senate Democrats had a filibuster-proof majority.",
+       x = "Year",
+       y = "% of proposed policy changes adopted in any given year") +
+  theme_linedraw() +
+  geom_vline(xintercept = 2009.512, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2009.6, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2009.731, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2009.772, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2010.013, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2010.093, lty = "dashed", color = "red")
+
+senate <- tibble(year = c(2009, 2010, 2011, 2012, 2013),
+                 sen_dems = c(59, 59, 53, 53, 55),
+                 sen_reps = c(41, 41, 47, 47, 45),
+                 sen_majority = c("D", "D", "D", "D", "D")) %>%
+  mutate(sen_seat_advantage = sen_dems - sen_reps)
+
+ggplot(senate, aes(x = year, y = sen_seat_advantage)) +
+  geom_rect(aes(xmin = 2009.512, xmax = 2009.6, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  geom_rect(aes(xmin = 2009.731, xmax = 2009.772, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  geom_rect(aes(xmin = 2010.013, xmax = 2010.093, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  geom_line() +
+  labs(title = "Change in Senate seat advantage over time during Obama's first term",
+       subtitle = "Red areas indicate the time periods in which the Democrats had a filibuster-proof majority.",
+       x = "Year",
+       y = "Senate seat advantage") +
+  theme_linedraw() +
+  geom_vline(xintercept = 2009.512, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2009.6, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2009.731, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2009.772, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2010.013, lty = "dashed", color = "red") +
+  geom_vline(xintercept = 2010.093, lty = "dashed", color = "red")
+
+
+house <- tibble(year = c(2009, 2010, 2011, 2012, 2013),
+                 hs_dems = c(256, 256, 193, 193, 200),
+                 hs_reps = c(178, 178, 242, 242, 233),
+                 hs_majority = c("D", "D", "R", "R", "R")) %>%
+  mutate(hs_seat_advantage = hs_dems - hs_reps)
+
+ggplot(house, aes(x = year, y = hs_seat_advantage)) +
+  geom_line() +
+  labs(title = "Change in House seat advantage over time during Obama's first term",
+       x = "Year",
+       y = "House seat advantage") +
+  theme_linedraw()
+
+# There were only two time periods during the 111th Congress when the Democrats 
+# had a 60 seat majority:
+
+# 1) From July 7. 2009 (when Al Franken was officially seated as the Senator from 
+# Minnesota after the last of Norm Coleman’s challenges came to an end) to 
+# August 25, 2009 (when Ted Kennedy died, although Kennedy’s illness had kept 
+# him from voting for several weeks before that date at least)
+
+# 2) From September 25, 2009 (when Paul Kirk was appointed to replace Kennedy) 
+# to February 4, 2010 (when Scott Brown took office after defeating Martha 
+# Coakley);
+
+# Since the Senate was not in session from 8/8/09-9/7/09 and 10/10/09 - 1/5/2010,
+# the only working days in which the Democrats had a filibuster-proof majority
+# were 7/7 - 8/8 (24 days), 9/25 - 10/10 (9 days), and 1/6 - 2/4 (20 days).
+
+e <- inner_join(d, inner_join(house, senate)) %>%
+  mutate(unified = if_else(sen_majority == "D" & hs_majority == "D", 1, 0)) %>%
+  select(year, gridlock, sen_seat_advantage, hs_seat_advantage, unified) 
+
+new_data_predictors <- inner_join(new_data_2, e)
+```
+
+```{r impute my data, warning = FALSE}
+new_data_imputed <- impute_preferences(new_data_predictors)
+write_csv(new_data_imputed, file = "clean_data/new_data_imputed.csv")
 ```
 
 ## Running analyses
