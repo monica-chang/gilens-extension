@@ -2,11 +2,13 @@
 title: "Gov 94OA Analysis"
 author: "Monica Chang"
 date: "5/6/2021"
-output: pdf_document
+output: 
+  pdf_document:
+    extra_dependencies: ["dcolumn"]
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(janitor)
 library(rstanarm)
@@ -177,19 +179,19 @@ impute_preferences <- function(df){
   return(df)
 }
 
-clean_gilens_3 <- impute_preferences(clean_gilens_2)
+# clean_gilens_3 <- impute_preferences(clean_gilens_2)
 
-write_csv(clean_gilens_3, file = "clean_data/clean_gilens_imputed")
+# write_csv(clean_gilens_3, file = "clean_data/clean_gilens_imputed")
 
 # Compare how close my imputation is to Gilens' imputation.
 
-a <- clean_gilens %>% 
-  dplyr::select(id8102, pred50_sw, pred90_sw)
-b <- clean_gilens_3 %>% 
-  dplyr::select(id8102, pred50_sw, pred90_sw) %>%
-  rename(id8102_2 = id8102, pred50_sw_2 = pred50_sw, pred90_sw_2 = pred90_sw)
-c <- cbind(a, b) %>% 
-  mutate(diff_50 = pred50_sw_2 - pred50_sw, diff_90 = pred90_sw_2 - pred90_sw)
+# a <- clean_gilens %>% 
+#   dplyr::select(id8102, pred50_sw, pred90_sw)
+# b <- clean_gilens_3 %>% 
+#  dplyr::select(id8102, pred50_sw, pred90_sw) %>%
+#  rename(id8102_2 = id8102, pred50_sw_2 = pred50_sw, pred90_sw_2 = pred90_sw)
+# c <- cbind(a, b) %>% 
+#  mutate(diff_50 = pred50_sw_2 - pred50_sw, diff_90 = pred90_sw_2 - pred90_sw)
 ```
     
 ## Imputing percentages with my own data
@@ -200,7 +202,7 @@ new_data <- read_excel(path = "clean_data/new_data.xlsx") %>%
   mutate(id = 1:152) 
 
 new_data_2 <- new_data %>% 
-  dplyr::select(id, year, outcome, switcher, xl_area, inc1_fav:inc12_dk) %>%
+  dplyr::select(id, year, outcome, switcher, xl_area, inc1_fav:inc12_dk, budget_reconciliation, filibuster_proof) %>%
   mutate_all(~replace(., is.na(.), 0)) %>%
   rowwise() %>% 
   
@@ -255,26 +257,29 @@ b <- new_data %>%
   summarize(adopted_changes = n())
 
 c <- inner_join(a, b) %>%
-  mutate(gridlock = adopted_changes/proposed_changes)
+  mutate(gridlock = ((proposed_changes - adopted_changes)/proposed_changes)*100)
 
 d <- c %>% select(year, gridlock)
 
 ggplot(c, aes(x = year, y = gridlock)) +
-  geom_rect(aes(xmin = 2009.512, xmax = 2009.6, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
-  geom_rect(aes(xmin = 2009.731, xmax = 2009.772, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
-  geom_rect(aes(xmin = 2010.013, xmax = 2010.093, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  
+  # There were only one time period during the 111th Congress when the Democrats 
+  # had a 60 seat majority:
+  
+  # From September 25, 2009 (when Paul Kirk was appointed to replace Kennedy) 
+  # to February 4, 2010 (when Scott Brown took office after defeating Martha 
+  # Coakley);
+  
+  geom_rect(aes(xmin = 2009.731, xmax = 2010.093, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
   geom_line() +
-  labs(title = "Change in gridlock over time during Obama's first term",
-       subtitle = "Red areas indicate the time periods in which the Senate Democrats had a filibuster-proof majority.",
+  labs(title = "Change in gridlock from 2009-2013",
+       subtitle = "Red area indicates the 4-month time period in which the Senate Democrats \nhad a filibuster-proof majority. Gridlock is measures as the percentage of \nproposed policy changes not adopted.",
        x = "Year",
-       y = "% of proposed policy changes adopted in any given year") +
+       y = "Gridlock") +
   theme_linedraw() +
-  geom_vline(xintercept = 2009.512, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2009.6, lty = "dashed", color = "red") +
   geom_vline(xintercept = 2009.731, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2009.772, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2010.013, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2010.093, lty = "dashed", color = "red")
+  geom_vline(xintercept = 2010.093, lty = "dashed", color = "red") +
+  ylim(0, 100)
 
 senate <- tibble(year = c(2009, 2010, 2011, 2012, 2013),
                  sen_dems = c(59, 59, 53, 53, 55),
@@ -283,21 +288,16 @@ senate <- tibble(year = c(2009, 2010, 2011, 2012, 2013),
   mutate(sen_seat_advantage = sen_dems - sen_reps)
 
 ggplot(senate, aes(x = year, y = sen_seat_advantage)) +
-  geom_rect(aes(xmin = 2009.512, xmax = 2009.6, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
-  geom_rect(aes(xmin = 2009.731, xmax = 2009.772, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
-  geom_rect(aes(xmin = 2010.013, xmax = 2010.093, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
+  geom_rect(aes(xmin = 2009.731, xmax = 2010.093, ymin = -Inf, ymax = Inf), alpha = 0.1, fill = "red") +
   geom_line() +
-  labs(title = "Change in Senate seat advantage over time during Obama's first term",
-       subtitle = "Red areas indicate the time periods in which the Democrats had a filibuster-proof majority.",
+  labs(title = "Change in Senate Democrats' seat advantage from 2009-2013",
+       subtitle = "Red area indicates the 4-month time period in which the Democrats \n had a filibuster-proof majority.",
        x = "Year",
-       y = "Senate seat advantage") +
+       y = "Senate Democrats' seat advantage") +
   theme_linedraw() +
-  geom_vline(xintercept = 2009.512, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2009.6, lty = "dashed", color = "red") +
   geom_vline(xintercept = 2009.731, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2009.772, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2010.013, lty = "dashed", color = "red") +
-  geom_vline(xintercept = 2010.093, lty = "dashed", color = "red")
+  geom_vline(xintercept = 2010.093, lty = "dashed", color = "red") +
+  ylim(0, 20)
 
 
 house <- tibble(year = c(2009, 2010, 2011, 2012, 2013),
@@ -308,38 +308,268 @@ house <- tibble(year = c(2009, 2010, 2011, 2012, 2013),
 
 ggplot(house, aes(x = year, y = hs_seat_advantage)) +
   geom_line() +
-  labs(title = "Change in House seat advantage over time during Obama's first term",
+  labs(title = "Change in House Democrats' seat advantage from 2009-2013",
        x = "Year",
-       y = "House seat advantage") +
-  theme_linedraw()
+       y = " House Democrats' seat advantage") +
+  theme_linedraw() +
+  geom_hline(yintercept = 0, lty = "dashed")
 
-# There were only two time periods during the 111th Congress when the Democrats 
-# had a 60 seat majority:
+cloture <- tibble(year = c(2009, 2010, 2011, 2012, 2013),
+                  cloture = c(69, 68, 48, 67, 78))
 
-# 1) From July 7. 2009 (when Al Franken was officially seated as the Senator from 
-# Minnesota after the last of Norm Coleman’s challenges came to an end) to 
-# August 25, 2009 (when Ted Kennedy died, although Kennedy’s illness had kept 
-# him from voting for several weeks before that date at least)
-
-# 2) From September 25, 2009 (when Paul Kirk was appointed to replace Kennedy) 
-# to February 4, 2010 (when Scott Brown took office after defeating Martha 
-# Coakley);
-
-# Since the Senate was not in session from 8/8/09-9/7/09 and 10/10/09 - 1/5/2010,
-# the only working days in which the Democrats had a filibuster-proof majority
-# were 7/7 - 8/8 (24 days), 9/25 - 10/10 (9 days), and 1/6 - 2/4 (20 days).
-
-e <- inner_join(d, inner_join(house, senate)) %>%
+e <- inner_join(d, inner_join(cloture, inner_join(house, senate))) %>%
   mutate(unified = if_else(sen_majority == "D" & hs_majority == "D", 1, 0)) %>%
-  select(year, gridlock, sen_seat_advantage, hs_seat_advantage, unified) 
+  select(year, gridlock, sen_seat_advantage, hs_seat_advantage, unified, cloture) 
 
 new_data_predictors <- inner_join(new_data_2, e)
 ```
 
+$$ policy\_preference = \beta_0*income + \beta_1*income^2 $$
+
 ```{r impute my data, warning = FALSE}
-new_data_imputed <- impute_preferences(new_data_predictors)
-write_csv(new_data_imputed, file = "clean_data/new_data_imputed.csv")
+# new_data_imputed <- impute_preferences(new_data_predictors)
+# write_csv(new_data_imputed, file = "clean_data/new_data_imputed.csv")
 ```
+
+```{r clean my imputed data, warning = FALSE}
+new_data_imputed <- read_csv(file = "clean_data/new_data_imputed.csv")
+
+clean_data <- new_data_imputed %>%
+  clean_names() %>%
+  
+  # I exclude the questions where there is no income breakdown.
+  
+  filter(!is.na(pred50_sw)) %>%
+  
+  # I use range01() to normalize my predictors to be on a scale 
+  # from 0 to 1.
+  
+  mutate(pred50_norm = range01(pred50_sw),
+         pred90_norm = range01(pred90_sw),
+         gridlock_norm = range01(gridlock),
+         sen_seat_advantage_norm = range01(sen_seat_advantage),
+         hs_seat_advantage_norm = range01(hs_seat_advantage))
+```
+
+## Correlations
+
+```{r generate correlation matrix}
+
+# I select the predictors relevant for Table 2.
+
+table_2 <- clean_data %>%
+  dplyr::select(pred50_norm, pred90_norm, gridlock_norm, 
+                sen_seat_advantage_norm, filibuster_proof)
+
+# I use the corstars() function to compute a correlation matrix with stars to
+# indicate significant correlations.
+
+table_2_correlation <- corstars(table_2) %>%
+  mutate(predictors = c("Median voter", "Affluent voter", 
+                        "Gridlock", "Senate seat advantage", "Filibuster-proof")) %>%
+  mutate(filibuster_proof = "") %>%
+  select(predictors, pred50_norm:sen_seat_advantage_norm, filibuster_proof)
+
+rownames(table_2_correlation) <- NULL
+
+# I format the table using functions from the kableExtra package.
+
+kbl(table_2_correlation, 
+    caption = "Correlations among independent variables", 
+    col.names = c(" ",
+                  "Median voter",
+                  "Affluent voter",
+                  "Gridlock", 
+                  "Senate seat advantage", 
+                  "Filibuster-proof"),
+    booktabs = T) %>%
+    kable_styling(latex_options = c("scale_down")) %>%
+    footnote(general = "***p<.001; n = 1779.")
+```
+
+## Running models
+
+```{r generate bivariate models}
+model_1 <- glm(outcome ~ pred50_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+model_2 <- glm(outcome ~ pred90_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+model_3 <- glm(outcome ~ gridlock_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+model_4 <- glm(outcome ~ sen_seat_advantage_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+model_5 <- glm(outcome ~ filibuster_proof, 
+               family = binomial(link="logit"),
+               data = clean_data)
+```
+
+```{r, results = "asis"}
+stargazer(model_1, model_2, model_3, model_4, model_5,
+          title = "The influence of median voter, affluent voter, gridlock, Senate seat advantage, filibuster-proof majorities on policy outcomes",
+          align = TRUE,
+          dep.var.labels = c("Policy change"),
+          column.labels = c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5"),
+          covariate.labels = c("Median voter", 
+                               "Affluent voter", 
+                               "Level of gridlock",
+                               "Senate seat advantage",
+                               "Filibuster-proof majority"),
+          omit.stat=c("LL","ser","f", "n"), 
+          no.space=TRUE,
+          notes = c("*p<0.1; **p<0.05; ***p<0.01", 
+                    "All predictors are scaled to range from 0 to 1. The",
+                    "dependent variable is the policy outcome, coded 1 if the", 
+                    "proposed policy change took place within four years of the",
+                    "survey date and 0 if it did not. These are all bivariate",
+                    "logistic regressions. N = 135."),
+          notes.align = "l",
+          notes.append = FALSE)
+```
+
+```{r generate multivariate models for gridlock}
+# I run a multivariate model where the preferences of the median voter,
+# gridlock, and the interaction between the preferences of the median voter and
+# gridlock are predictors of policy change.
+
+model_6 <- glm(outcome ~ pred50_norm + gridlock_norm + pred50_norm*gridlock_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+# I run a multivariate model where the preferences of the affluent voter,
+# gridlock, and the interaction between the preferences of the affluent voter 
+# and gridlock are predictors of policy change.
+
+model_7 <- glm(outcome ~ pred90_norm + gridlock_norm + pred90_norm*gridlock_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+
+# I use invlogit() to convert to predicted probabilities for policy change to
+# be adopted. This makes the coefficient more interpretable.
+
+d = coef(model_6)
+pred50_norm_avg <- mean(clean_data$pred50_norm)
+invlogit(d[1] + d[2]*pred50_norm_avg + d[3]*0.44 + d[4]*pred50_norm_avg*0.44)
+invlogit(d[1] + d[2]*pred50_norm_avg + d[3]*0.88 + d[4]*pred50_norm_avg*0.88)
+
+e = coef(model_7)
+pred90_norm_avg <- mean(clean_data$pred90_norm)
+invlogit(d[1] + d[2]*pred90_norm_avg + d[3]*0.44 + d[4]*pred90_norm_avg*0.44)
+invlogit(d[1] + d[2]*pred90_norm_avg + d[3]*0.88 + d[4]*pred90_norm_avg*0.88)
+```
+
+```{r, results = "asis"}
+stargazer(model_6, model_7,
+          title = "The influence of gridlock on governmental responsiveness to the median voter and affluent voter",
+          align = TRUE,
+          dep.var.labels = c("Policy change"),
+          column.labels = c("Model 6", "Model 7"),
+          covariate.labels = c("Preferences of median voter", 
+                               "Preferences of affluent voter", 
+                               "Level of gridlock",
+                               "Preferences of median voter*Gridlock",
+                               "Preferences of affluent voter*Gridlock"),
+          omit.stat=c("LL","ser","f", "n"), 
+          no.space=TRUE,
+          notes = c("*p<0.1; **p<0.05; ***p<0.01", 
+                    "All predictors are scaled to range from 0 to 1. The",
+                    "dependent variable is the policy outcome, coded 1 if the", 
+                    "proposed policy change took place within four years of the",
+                    "survey date and 0 if it did not. These models are all",
+                    "multivariate logistic regressions. N = 135."),
+          notes.align = "l",
+          notes.append = FALSE)
+```
+
+```{r generate multivariate models for Senate seat advantage}
+# I run a multivariate model where the preferences of the median voter,
+# Senate seat advantage, and the interaction between the preferences of the 
+# median voter and Senate seat advantage are predictors of policy change.
+
+model_8 <- glm(outcome ~ pred50_norm + sen_seat_advantage_norm + pred50_norm*sen_seat_advantage_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+# I run a multivariate model where the preferences of the median voter,
+# Senate seat advantage, and the interaction between the preferences of the 
+# median voter and Senate seat advantage are predictors of policy change.
+
+model_9 <- glm(outcome ~ pred90_norm + sen_seat_advantage_norm + pred90_norm*sen_seat_advantage_norm, 
+               family = binomial(link="logit"),
+               data = clean_data)
+```
+
+```{r, results = "asis"}
+stargazer(model_8, model_9,
+          title = "The influence of Senate seat advantage on governmental responsiveness to the median voter and affluent voter",
+          align = TRUE,
+          dep.var.labels = c("Policy change"),
+          column.labels = c("Model 8", "Model 9"),
+          covariate.labels = c("Preferences of median voter", 
+                               "Preferences of affluent voter", 
+                               "Senate seat advantage",
+                               "Preferences of median voter*Senate seat advantage",
+                               "Preferences of affluent voter*Senate seat advantage"),
+          omit.stat=c("LL","ser","f", "n"), 
+          no.space=TRUE,
+          notes = c("*p<0.1; **p<0.05; ***p<0.01", 
+                    "All predictors are scaled to range from 0 to 1. The",
+                    "dependent variable is the policy outcome, coded 1 if the", 
+                    "proposed policy change took place within four years of the",
+                    "survey date and 0 if it did not. These models are all",
+                    "multivariate logistic regressions. N = 135."),
+          notes.align = "l",
+          notes.append = FALSE)
+```
+```{r generate multivariate models for filibuster proof majorities}
+model_10 <- glm(outcome ~ pred50_norm + filibuster_proof + pred50_norm*filibuster_proof, 
+               family = binomial(link="logit"),
+               data = clean_data)
+
+model_11 <- glm(outcome ~ pred90_norm + filibuster_proof + pred90_norm*filibuster_proof, 
+               family = binomial(link="logit"),
+               data = clean_data)
+```
+
+```{r, results = "asis"}
+stargazer(model_10, model_11,
+          title = "The influence of filibuster-proof majorities on governmental responsiveness to the median voter and affluent voter",
+          align = TRUE,
+          dep.var.labels = c("Policy change"),
+          column.labels = c("Model 10", "Model 11"),
+          covariate.labels = c("Preferences of median voter", 
+                               "Preferences of affluent voter", 
+                               "Filibuster-proof majority",
+                               "Preferences of median voter*Filibuster-proof majority",
+                               "Preferences of affluent voter*Filibuster-proof majority"),
+          omit.stat=c("LL","ser","f", "n"), 
+          no.space=TRUE,
+          notes = c("*p<0.1; **p<0.05; ***p<0.01", 
+                    "All predictors are scaled to range from 0 to 1. The",
+                    "dependent variable is the policy outcome, coded 1 if the", 
+                    "proposed policy change took place within four years of the",
+                    "survey date and 0 if it did not. These models are all",
+                    "multivariate logistic regressions. N = 135."),
+          notes.align = "l",
+          notes.append = FALSE)
+```
+
+More gridlock, less responsiveness to the median voter. 
+More gridlock, less responsiveness to the affluent voter.
+
+More senate seat advantage, more responsiveness to median voter. (not significant)
+More senate seat advantage, more responsiveness to affluent voter. (not significant)
+
+Filibuster proof, more responsive to median voter (not significant)
+Filibuster proof, more responsive to affluent voter (not significant)
 
 ## Running analyses
 
